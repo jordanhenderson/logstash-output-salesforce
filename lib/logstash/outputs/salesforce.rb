@@ -54,6 +54,9 @@ class LogStash::Outputs::SalesForce < LogStash::Outputs::Base
   public
   def register
     require 'restforce'
+    if ENV['RESTFORCE_ENABLE_LOG']
+      Restforce.log = true
+    end
     if @test
       @client = Restforce.new :host           => 'test.salesforce.com',
                               :username       => @username,
@@ -77,7 +80,7 @@ class LogStash::Outputs::SalesForce < LogStash::Outputs::Base
   def receive(event)
     return unless output?(event)
     @event_to_sfdc_keys_mapping.each_key do |event_key_field|
-      return unless event[event_key_field]
+      return unless event.get(event_key_field)
     end
     begin
       results = @client.query(get_query(event))
@@ -98,22 +101,39 @@ class LogStash::Outputs::SalesForce < LogStash::Outputs::Base
   end #def receive
 
   private
+    def parse_field(event,evt_key,sfdc_obj,sfdc_key)
+      field = event.get(evt_key)
+      begin
+        if @field_types[sfdc_key] == 'datetime' ||
+           @field_types[sfdc_key] == 'date'
+           if field.is_a?(String) && field.length > 0
+            parsedTime = Time.parse(field)
+            if parsedTime < Time.new(1700, 1, 1)
+              parsedTime = Time.new(1700, 1, 1)
+            end
+            sfdc_obj[sfdc_key] = parsedTime.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+           elsif field.is_a?(LogStash::Timestamp)
+            sfdc_obj[sfdc_key] = field.to_s
+           else
+            sfdc_obj[sfdc_key] = nil
+           end
+        elsif @field_types[sfdc_key] == 'boolean'
+          sfdc_obj[sfdc_key] = !!field
+        else
+          sfdc_obj[sfdc_key] = field
+        end
+      rescue StandardError => e
+        @logger.error(e.message)
+        #ignore this error so logstash doesn't crash
+      end
+    end
+
     def update_sfdc_object(event,sfdc_obj)
       return unless event
       return unless sfdc_obj
       @event_to_sfdc_mapping.each do |evt_key,sfdc_key|
-        if defined?(event[evt_key]) and not event[evt_key].nil?
-          if @field_types[sfdc_key] == 'datetime'
-            if event[evt_key].respond_to?(:strftime)
-              sfdc_obj[sfdc_key] = Time.parse(event[evt_key].strftime("%Y-%m-%d %H:%M:%S"))
-            else
-              sfdc_obj[sfdc_key] = Time.parse(event[evt_key].to_s)
-            end
-          elsif @field_types[sfdc_key] == 'date'
-            sfdc_obj[sfdc_key] = Date.parse(event[evt_key])
-          else
-            sfdc_obj[sfdc_key] = event[evt_key]
-          end
+        if defined?(event.get(evt_key)) and not event.get(evt_key).nil?
+          parse_field(event,evt_key,sfdc_obj,sfdc_key)
         end
       end
       @increment_fields.each do |increment_field|
@@ -140,10 +160,10 @@ class LogStash::Outputs::SalesForce < LogStash::Outputs::Base
       end
       @logger.debug("Response: "+resp.to_s)
       if !@store_results_in.nil?
-        event[@store_results_in] = {
+        event.set(@store_results_in, {
           'status' => resp,
           'object_id' => update_hash['Id']
-        }
+        })
       end
     end
 
@@ -151,18 +171,8 @@ class LogStash::Outputs::SalesForce < LogStash::Outputs::Base
       return unless event
       vals_to_update = {}
       @event_to_sfdc_mapping.each do |evt_key,sfdc_key|
-        if defined?(event[evt_key])
-          if @field_types[sfdc_key] == 'datetime'
-            if event[evt_key].respond_to?(:strftime)
-              vals_to_update[sfdc_key] = Time.parse(event[evt_key].strftime("%Y-%m-%d %H:%M:%S"))
-            else
-              vals_to_update[sfdc_key] = Time.parse(event[evt_key].to_s)
-            end
-          elsif @field_types[sfdc_key] == 'date'
-            vals_to_update[sfdc_key] = Date.parse(event[evt_key])
-          else
-            vals_to_update[sfdc_key] = event[evt_key]
-          end
+        if defined?(event.get(evt_key))
+          parse_field(event,evt_key,vals_to_update,sfdc_key)
         end
       end
       @increment_fields.each do |increment_field|
@@ -174,10 +184,10 @@ class LogStash::Outputs::SalesForce < LogStash::Outputs::Base
       resp = @client.create(@sfdc_object_name,vals_to_update)
       @logger.debug("Id of created object: "+resp.to_s)
       if !@store_results_in.nil?
-        event[@store_results_in] = {
+        event.set(@store_results_in, {
           'status' => !resp.nil?,
           'object_id' => resp.to_s
-        }
+        })
       end
       return resp
     end
@@ -205,7 +215,7 @@ class LogStash::Outputs::SalesForce < LogStash::Outputs::Base
     def get_query(event)
       query = ""
       @event_to_sfdc_keys_mapping.each do |evt_key,sfdc_key|
-        query += sfdc_key+" = '"+event[evt_key].to_s+"'"
+        query += sfdc_key+" = '"+event.get(evt_key).to_s+"'"
         query += ' AND '
       end
       query = "SELECT Id FROM "+@sfdc_object_name+" WHERE "+query[0..-6] #remove the last and
