@@ -1,4 +1,4 @@
-FROM docker.elastic.co/logstash/logstash-oss:6.3.1
+FROM docker.elastic.co/logstash/logstash-oss:6.3.2
 
 WORKDIR /usr/src/plugin
 
