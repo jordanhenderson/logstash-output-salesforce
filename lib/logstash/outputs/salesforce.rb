@@ -156,7 +156,7 @@ class LogStash::Outputs::SalesForce < LogStash::Outputs::Base
         sleep(1) # Sleep one second between retries
       end
       if !resp
-        @logger.error('Was not able to update: '+update_hash['Id'])
+        @logger.error("ERROR: was not able to create #{@sfdc_object_name}: #{update_hash.to_s}")
       end
       @logger.debug("Response: "+resp.to_s)
       if !@store_results_in.nil?
@@ -182,6 +182,10 @@ class LogStash::Outputs::SalesForce < LogStash::Outputs::Base
         vals_to_update[sfdc_key] = static_value
       end
       resp = @client.create(@sfdc_object_name,vals_to_update)
+      if !resp
+        @logger.error("ERROR: was not able to create #{@sfdc_object_name}: #{vals_to_update.to_s}")
+      end
+
       @logger.debug("Id of created object: "+resp.to_s)
       if !@store_results_in.nil?
         event.set(@store_results_in, {
