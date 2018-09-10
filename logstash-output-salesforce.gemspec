@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name            = 'logstash-output-salesforce'
-  s.version         = '1.0.1'
+  s.version         = '1.0.2'
   s.licenses        = ['Apache License (2.0)']
   s.summary         = "An output to create and update Salesforce sObjects using the API"
   s.description     = "This gem is a logstash plugin required to be installed on top of the Logstash core pipeline using $LS_HOME/bin/plugin install gemname. This gem is not a stand-alone program"

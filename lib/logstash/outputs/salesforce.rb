@@ -156,7 +156,7 @@ class LogStash::Outputs::SalesForce < LogStash::Outputs::Base
         sleep(1) # Sleep one second between retries
       end
       if !resp
-        @logger.error("ERROR: was not able to create #{@sfdc_object_name}: #{update_hash.to_s}")
+        @logger.error('Was not able to update: '+update_hash['Id'])
       end
       @logger.debug("Response: "+resp.to_s)
       if !@store_results_in.nil?
@@ -216,10 +216,19 @@ class LogStash::Outputs::SalesForce < LogStash::Outputs::Base
       return field_types
     end
 
+    def get_query_param(event, evt_key, sfdc_key)
+      value = event.get(evt_key)
+      if @field_types[sfdc_key] == 'double'
+        value
+      else
+        "'#{value}'"
+      end
+    end
+
     def get_query(event)
       query = ""
       @event_to_sfdc_keys_mapping.each do |evt_key,sfdc_key|
-        query += sfdc_key+" = '"+event.get(evt_key).to_s+"'"
+        query += sfdc_key+" = "+get_query_param(event,evt_key,sfdc_key).to_s
         query += ' AND '
       end
       query = "SELECT Id FROM "+@sfdc_object_name+" WHERE "+query[0..-6] #remove the last and
